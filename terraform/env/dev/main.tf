@@ -46,6 +46,50 @@ locals {
       vnet_cidr_location                     =  local.sub_default_loc
       vnet_cidr                              = ["192.168.0.0/23"]
       enable_locks                           = false
+      subnets = {
+        "${local.sub_name_prefix}sub001" = {
+          location            = local.sub_default_loc
+          resource_group_name = data.azurerm_resource_group.rgp_iac.name
+          subnet              = ["192.168.0.0/24"]
+          service_endpoints = []
+          delegations = []
+          enforce_private_link_endpoint_network_policies = true
+          rules = {
+            # sql_in = {
+            #   name                         = "sql"
+            #   priority                     = 100
+            #   direction                    = "Inbound"
+            #   access                       = "Allow"
+            #   protocol                     = "Tcp"
+            #   source_address_prefix        = "0.0.0.0/0"
+            #   source_port_range            = "*"
+            #   destination_address_prefix   = "0.0.0.0/0"
+            #   destination_port_range       = "1433"
+            # }
+          }
+        }
+        "${local.sub_name_prefix}sub002" = {
+          location            = local.sub_default_loc
+          resource_group_name = data.azurerm_resource_group.rgp_iac.name
+          subnet              = ["192.168.1.0/24"]
+          service_endpoints = []
+          delegations = []
+          enforce_private_link_endpoint_network_policies = true
+          rules = {
+            # sql_in = {
+            #   name                         = "sql"
+            #   priority                     = 100
+            #   direction                    = "Inbound"
+            #   access                       = "Allow"
+            #   protocol                     = "Tcp"
+            #   source_address_prefix        = "0.0.0.0/0"
+            #   source_port_range            = "*"
+            #   destination_address_prefix   = "0.0.0.0/0"
+            #   destination_port_range       = "1433"
+            # }
+          }
+        }
+      }
     }
   }
 
@@ -89,7 +133,7 @@ data "azurerm_storage_account" "str_coreinfra" {
 }
 
 #**************************************
-# vNet
+# vNet(s)
 #**************************************
 resource "azurerm_virtual_network" "vnets" {
   for_each            = local.vnets
@@ -110,6 +154,74 @@ resource "azurerm_management_lock" "vnets" {
   lock_level = "CanNotDelete"
   notes      = "Locked to protect against deletion"
 }
+
+#**************************************
+# Subnet(s)
+#**************************************
+locals {
+  vnet_subnets = flatten([
+    for vnet_key, vnet in local.vnets : [
+      for subnet_key, subnet in vnet.subnets : {
+        vnet_key   = vnet_key
+        subnet_key = subnet_key
+
+        address_prefixes                               = subnet.subnet
+        service_endpoints                              = subnet.service_endpoints
+        enforce_private_link_endpoint_network_policies = subnet.enforce_private_link_endpoint_network_policies
+        delegations                                    = subnet.delegations
+        rules                                          = subnet.rules
+      }
+    ]
+  ])  
+}
+
+resource "azurerm_subnet" "subnets" {
+  for_each = {
+    for subnet in local.vnet_subnets : "${subnet.vnet_key}.${subnet.subnet_key}" => subnet
+  }
+
+  name                                           = each.value.subnet_key
+  resource_group_name                            = data.azurerm_resource_group.rgp_iac.name
+  virtual_network_name                           = azurerm_virtual_network.vnets[each.value.vnet_key].name
+  address_prefixes                               = each.value.address_prefixes
+  service_endpoints                              = each.value.service_endpoints
+  enforce_private_link_endpoint_network_policies = each.value.enforce_private_link_endpoint_network_policies
+
+  dynamic delegation {
+    for_each = each.value.delegations
+
+    content {
+      name = delegation.value.name
+
+      dynamic service_delegation {
+        for_each = delegation.value.services
+
+        content {
+          name    = service_delegation.value.name
+          actions = service_delegation.value.actions
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [delegation]
+  }
+}
+
+
+
+# resource "azurerm_subnet" "subnets" {
+#   for_each                                       = local.subnets
+#   name                                           = each.key
+#   resource_group_name                            = data.azurerm_resource_group.coreinfra.name
+#   virtual_network_name                           = data.azurerm_virtual_network.nonprod-vnet.name
+#   address_prefixes                               = each.value.subnet
+#   service_endpoints                              = ["Microsoft.Storage"]
+#   enforce_private_link_endpoint_network_policies = true
+
+#   depends_on = [azurerm_resource_group.avd_rgs]
+# }
 
 #**************************************
 # KeyVault Resource Group
