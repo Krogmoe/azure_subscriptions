@@ -34,17 +34,6 @@ locals {
   sub_default_loc      = "westus2"
   enable_locks         = false
 
-  keyvaults = {
-    "${local.sub_name_prefix}keyvault" = {
-      kv_location                 = local.sub_default_loc
-      kv_resource_group_name      = azurerm_resource_group.rgp_keyvault.name
-      kv_tenant_id                = data.azuread_client_config.krogmoe.tenant_id
-      kv_sku_name                 = "standard"
-      kv_purge_protection_enabled = false
-      enable_locks                = false
-    }
-  }
-
   default_tags = {
     "description"        = "Core Infrastructure Resources",
     "billing_identifier" = "123456",
@@ -61,49 +50,6 @@ data "azurerm_subscription" "current" {
 
 # Client Config ---
 data "azuread_client_config" "krogmoe" {}
-
-#**************************************
-# KeyVault Resource Group
-#**************************************
-resource "azurerm_resource_group" "rgp_keyvault" {
-  name     = "${local.sub_name_prefix}rgpkeyvaults"
-  location = local.sub_default_loc
-
-  tags = local.default_tags
-}
-
-resource "azurerm_management_lock" "rgp_keyvault" {
-  count      = local.enable_locks ? 1 : 0
-  name       = "${local.sub_name_prefix}rgpkeyvaults"
-  scope      = azurerm_resource_group.rgp_keyvault.id
-  lock_level = "CanNotDelete"
-  notes      = "Locked to protect against deletion"
-}
-
-#**************************************
-# KeyVault
-#**************************************
-resource "azurerm_key_vault" "key_certs" {
-  for_each                 = local.keyvaults
-  name                     = each.key
-  location                 = each.value.kv_location
-  resource_group_name      = each.value.kv_resource_group_name
-  tenant_id                = each.value.kv_tenant_id
-  sku_name                 = each.value.kv_sku_name
-  purge_protection_enabled = each.value.kv_purge_protection_enabled
-
-  tags = local.default_tags
-}
-
-resource "azurerm_management_lock" "key_certs" {
-  for_each = { 
-    for k, v in local.keyvaults : k => v if v.enable_locks
-  }
-  name       = each.key
-  scope      = azurerm_key_vault.key_certs[each.key].id
-  lock_level = "CanNotDelete"
-  notes      = "Locked to protect against deletion"
-}
 
 #**************************************
 # IAC Resource Group
