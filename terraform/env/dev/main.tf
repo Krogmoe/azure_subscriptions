@@ -209,19 +209,9 @@ resource "azurerm_subnet" "subnets" {
   }
 }
 
-
-
-# resource "azurerm_subnet" "subnets" {
-#   for_each                                       = local.subnets
-#   name                                           = each.key
-#   resource_group_name                            = data.azurerm_resource_group.coreinfra.name
-#   virtual_network_name                           = data.azurerm_virtual_network.nonprod-vnet.name
-#   address_prefixes                               = each.value.subnet
-#   service_endpoints                              = ["Microsoft.Storage"]
-#   enforce_private_link_endpoint_network_policies = true
-
-#   depends_on = [azurerm_resource_group.avd_rgs]
-# }
+#**************************************
+# NSG(s)
+#**************************************
 
 #**************************************
 # KeyVault Resource Group
