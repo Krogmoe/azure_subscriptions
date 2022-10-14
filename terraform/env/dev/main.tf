@@ -1,6 +1,6 @@
 
 # *****************************************************************************
-#  The XXXXXXXXXXXXXXX Subscription
+#  The Krogmoe DEV Subscription
 # *****************************************************************************
 
 terraform {
@@ -29,12 +29,6 @@ terraform {
 #**************************************
 provider "azurerm" {
   subscription_id = "<Subscription ID>" # Example "c9528965-5080-44c0-8752-e628e7ae25cf"
-  features {}
-}
-
-provider "azurerm" {
-  alias           = "splat"
-  subscription_id = "8cfee6bc-4836-490b-a82a-c04504d7703d" # J.R. Simplot Prod
   features {}
 }
 
