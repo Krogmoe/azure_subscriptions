@@ -36,58 +36,84 @@ provider "azurerm" {
 # Local variables
 #**************************************
 locals {
-  sub_id               = "4dbb38b7-84ce-4b2d-b44f-20e94d38bed9"
-  sub_name_prefix      = "krogdev01"
-  sub_default_loc      = "westus2"
-  enable_locks         = false
+  sub_id          = "4dbb38b7-84ce-4b2d-b44f-20e94d38bed9"
+  sub_name_prefix = "krogdev01"
+  sub_default_loc = "westus2"
+  enable_locks    = false
 
   vnets = {
     "${local.sub_name_prefix}net${local.sub_default_loc}" = {
-      vnet_cidr_location                     =  local.sub_default_loc
-      vnet_cidr                              = ["192.168.0.0/23"]
-      enable_locks                           = false
-      subnets = {
-        "${local.sub_name_prefix}sub001" = {
-          location            = local.sub_default_loc
-          resource_group_name = data.azurerm_resource_group.rgp_iac.name
-          subnet              = ["192.168.0.0/24"]
-          service_endpoints = []
-          delegations = []
-          enforce_private_link_endpoint_network_policies = true
-          rules = {
-            # sql_in = {
-            #   name                         = "sql"
-            #   priority                     = 100
-            #   direction                    = "Inbound"
-            #   access                       = "Allow"
-            #   protocol                     = "Tcp"
-            #   source_address_prefix        = "0.0.0.0/0"
-            #   source_port_range            = "*"
-            #   destination_address_prefix   = "0.0.0.0/0"
-            #   destination_port_range       = "1433"
-            # }
-          }
+      vnet_cidr_location = local.sub_default_loc
+      vnet_cidr          = ["192.168.0.0/22"]
+      enable_locks       = false
+
+    }
+  }
+
+  subnets = {
+    "${local.sub_name_prefix}sub001" = {
+      location                                       = local.sub_default_loc
+      resource_group_name                            = data.azurerm_resource_group.rgp_iac.name
+      vnet                                           = "${local.sub_name_prefix}net${local.sub_default_loc}"
+      subnet                                         = ["192.168.0.0/24"]
+      service_endpoints                              = []
+      delegations                                    = []
+      enforce_private_link_endpoint_network_policies = true
+      rules = {
+        https_in = {
+          name                       = "https_ingress"
+          priority                   = 100
+          direction                  = "Inbound"
+          access                     = "Allow"
+          protocol                   = "Tcp"
+          source_address_prefix      = "0.0.0.0/0"
+          source_port_range          = "*"
+          destination_address_prefix = "0.0.0.0/0"
+          destination_port_range     = "443"
         }
-        "${local.sub_name_prefix}sub002" = {
-          location            = local.sub_default_loc
-          resource_group_name = data.azurerm_resource_group.rgp_iac.name
-          subnet              = ["192.168.1.0/24"]
-          service_endpoints = []
-          delegations = []
-          enforce_private_link_endpoint_network_policies = true
-          rules = {
-            # sql_in = {
-            #   name                         = "sql"
-            #   priority                     = 100
-            #   direction                    = "Inbound"
-            #   access                       = "Allow"
-            #   protocol                     = "Tcp"
-            #   source_address_prefix        = "0.0.0.0/0"
-            #   source_port_range            = "*"
-            #   destination_address_prefix   = "0.0.0.0/0"
-            #   destination_port_range       = "1433"
-            # }
-          }
+        https_out = {
+          name                       = "https_egress"
+          priority                   = 100
+          direction                  = "Outbound"
+          access                     = "Allow"
+          protocol                   = "Tcp"
+          source_address_prefix      = "0.0.0.0/0"
+          source_port_range          = "*"
+          destination_address_prefix = "0.0.0.0/0"
+          destination_port_range     = "443"
+        }
+      }
+    }
+    "${local.sub_name_prefix}sub002" = {
+      location                                       = local.sub_default_loc
+      resource_group_name                            = data.azurerm_resource_group.rgp_iac.name
+      vnet                                           = "${local.sub_name_prefix}net${local.sub_default_loc}"
+      subnet                                         = ["192.168.1.0/24"]
+      service_endpoints                              = []
+      delegations                                    = []
+      enforce_private_link_endpoint_network_policies = true
+      rules = {
+        https_in = {
+          name                       = "https_ingress"
+          priority                   = 100
+          direction                  = "Inbound"
+          access                     = "Allow"
+          protocol                   = "Tcp"
+          source_address_prefix      = "0.0.0.0/0"
+          source_port_range          = "*"
+          destination_address_prefix = "0.0.0.0/0"
+          destination_port_range     = "443"
+        }
+        https_out = {
+          name                       = "https_egress"
+          priority                   = 100
+          direction                  = "Outbound"
+          access                     = "Allow"
+          protocol                   = "Tcp"
+          source_address_prefix      = "0.0.0.0/0"
+          source_port_range          = "*"
+          destination_address_prefix = "0.0.0.0/0"
+          destination_port_range     = "443"
         }
       }
     }
@@ -145,55 +171,25 @@ resource "azurerm_virtual_network" "vnets" {
   tags = local.default_tags
 }
 
-resource "azurerm_management_lock" "vnets" {
-  for_each = { 
-    for k, v in local.vnets : k => v if v.enable_locks
-  }
-  name       = each.key
-  scope      = azurerm_virtual_network.vnets[each.key].id
-  lock_level = "CanNotDelete"
-  notes      = "Locked to protect against deletion"
-}
-
 #**************************************
 # Subnet(s)
 #**************************************
-locals {
-  vnet_subnets = flatten([
-    for vnet_key, vnet in local.vnets : [
-      for subnet_key, subnet in vnet.subnets : {
-        vnet_key   = vnet_key
-        subnet_key = subnet_key
-
-        address_prefixes                               = subnet.subnet
-        service_endpoints                              = subnet.service_endpoints
-        enforce_private_link_endpoint_network_policies = subnet.enforce_private_link_endpoint_network_policies
-        delegations                                    = subnet.delegations
-        rules                                          = subnet.rules
-      }
-    ]
-  ])  
-}
-
 resource "azurerm_subnet" "subnets" {
-  for_each = {
-    for subnet in local.vnet_subnets : "${subnet.vnet_key}.${subnet.subnet_key}" => subnet
-  }
-
-  name                                           = each.value.subnet_key
-  resource_group_name                            = data.azurerm_resource_group.rgp_iac.name
-  virtual_network_name                           = azurerm_virtual_network.vnets[each.value.vnet_key].name
-  address_prefixes                               = each.value.address_prefixes
+  for_each                                       = local.subnets
+  name                                           = each.key
+  resource_group_name                            = each.value.resource_group_name
+  virtual_network_name                           = each.value.vnet
+  address_prefixes                               = each.value.subnet
   service_endpoints                              = each.value.service_endpoints
   enforce_private_link_endpoint_network_policies = each.value.enforce_private_link_endpoint_network_policies
 
-  dynamic delegation {
+  dynamic "delegation" {
     for_each = each.value.delegations
 
     content {
       name = delegation.value.name
 
-      dynamic service_delegation {
+      dynamic "service_delegation" {
         for_each = delegation.value.services
 
         content {
@@ -207,11 +203,9 @@ resource "azurerm_subnet" "subnets" {
   lifecycle {
     ignore_changes = [delegation]
   }
-}
 
-#**************************************
-# NSG(s)
-#**************************************
+  depends_on = [azurerm_virtual_network.vnets]
+}
 
 #**************************************
 # KeyVault Resource Group
@@ -223,13 +217,13 @@ resource "azurerm_resource_group" "rgp_keyvault" {
   tags = local.default_tags
 }
 
-resource "azurerm_management_lock" "rgp_keyvault" {
-  count      = local.enable_locks ? 1 : 0
-  name       = "${local.sub_name_prefix}rgpkeyvaults"
-  scope      = azurerm_resource_group.rgp_keyvault.id
-  lock_level = "CanNotDelete"
-  notes      = "Locked to protect against deletion"
-}
+# resource "azurerm_management_lock" "rgp_keyvault" {
+#   count      = local.enable_locks ? 1 : 0
+#   name       = "${local.sub_name_prefix}rgpkeyvaults"
+#   scope      = azurerm_resource_group.rgp_keyvault.id
+#   lock_level = "CanNotDelete"
+#   notes      = "Locked to protect against deletion"
+# }
 
 #**************************************
 # KeyVault
@@ -246,12 +240,12 @@ resource "azurerm_key_vault" "key_certs" {
   tags = local.default_tags
 }
 
-resource "azurerm_management_lock" "key_certs" {
-  for_each = { 
-    for k, v in local.keyvaults : k => v if v.enable_locks
-  }
-  name       = each.key
-  scope      = azurerm_key_vault.key_certs[each.key].id
-  lock_level = "CanNotDelete"
-  notes      = "Locked to protect against deletion"
-}
+# resource "azurerm_management_lock" "key_certs" {
+#   for_each = { 
+#     for k, v in local.keyvaults : k => v if v.enable_locks
+#   }
+#   name       = each.key
+#   scope      = azurerm_key_vault.key_certs[each.key].id
+#   lock_level = "CanNotDelete"
+#   notes      = "Locked to protect against deletion"
+# }
