@@ -59,6 +59,7 @@ locals {
       service_endpoints                              = []
       delegations                                    = []
       enforce_private_link_endpoint_network_policies = true
+      enable_locks                                   = false
       rules = {
         https_in = {
           name                       = "https_ingress"
@@ -92,6 +93,7 @@ locals {
       service_endpoints                              = []
       delegations                                    = []
       enforce_private_link_endpoint_network_policies = true
+      enable_locks                                   = false
       rules = {
         https_in = {
           name                       = "https_ingress"
@@ -207,6 +209,16 @@ resource "azurerm_subnet" "subnets" {
   depends_on = [azurerm_virtual_network.vnets]
 }
 
+resource "azurerm_management_lock" "subnets" {
+  for_each = {
+    for k, v in local.subnets : k => v if v.enable_locks
+  }
+  name       = each.key
+  scope      = azurerm_subnet.subnets[each.key].id
+  lock_level = "CanNotDelete"
+  notes      = "Locked to protect against deletion"
+}
+
 #**************************************
 # KeyVault Resource Group
 #**************************************
@@ -217,13 +229,13 @@ resource "azurerm_resource_group" "rgp_keyvault" {
   tags = local.default_tags
 }
 
-# resource "azurerm_management_lock" "rgp_keyvault" {
-#   count      = local.enable_locks ? 1 : 0
-#   name       = "${local.sub_name_prefix}rgpkeyvaults"
-#   scope      = azurerm_resource_group.rgp_keyvault.id
-#   lock_level = "CanNotDelete"
-#   notes      = "Locked to protect against deletion"
-# }
+resource "azurerm_management_lock" "rgp_keyvault" {
+  count      = local.enable_locks ? 1 : 0
+  name       = "${local.sub_name_prefix}rgpkeyvaults"
+  scope      = azurerm_resource_group.rgp_keyvault.id
+  lock_level = "CanNotDelete"
+  notes      = "Locked to protect against deletion"
+}
 
 #**************************************
 # KeyVault
@@ -240,12 +252,12 @@ resource "azurerm_key_vault" "key_certs" {
   tags = local.default_tags
 }
 
-# resource "azurerm_management_lock" "key_certs" {
-#   for_each = { 
-#     for k, v in local.keyvaults : k => v if v.enable_locks
-#   }
-#   name       = each.key
-#   scope      = azurerm_key_vault.key_certs[each.key].id
-#   lock_level = "CanNotDelete"
-#   notes      = "Locked to protect against deletion"
-# }
+resource "azurerm_management_lock" "key_certs" {
+  for_each = {
+    for k, v in local.keyvaults : k => v if v.enable_locks
+  }
+  name       = each.key
+  scope      = azurerm_key_vault.key_certs[each.key].id
+  lock_level = "CanNotDelete"
+  notes      = "Locked to protect against deletion"
+}
