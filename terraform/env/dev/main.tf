@@ -233,9 +233,9 @@ data "azurerm_storage_account" "str_coreinfra" {
   resource_group_name = "${local.sub_name_prefix}rgpiac"
 }
 
-#**************************************
-# Base IAC - Process Starts Here.....
-#**************************************
-module "base" {
-  source = "../../../modules/base"
-}
+# #**************************************
+# # Base IAC - Process Starts Here.....
+# #**************************************
+# module "base" {
+#   source = "../../../modules/base"
+# }
