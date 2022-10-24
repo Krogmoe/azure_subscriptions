@@ -45,8 +45,8 @@ locals {
     "${local.sub_name_prefix}net${local.sub_default_loc}" = {
       vnet_cidr_location = local.sub_default_loc
       vnet_cidr          = ["192.168.0.0/22"]
+      create             = true
       enable_locks       = false
-
     }
   }
 
@@ -59,6 +59,7 @@ locals {
       service_endpoints                              = []
       delegations                                    = []
       enforce_private_link_endpoint_network_policies = true
+      create                                         = true
       enable_locks                                   = false
       rules = {
         https_in = {
@@ -93,6 +94,7 @@ locals {
       service_endpoints                              = []
       delegations                                    = []
       enforce_private_link_endpoint_network_policies = true
+      create                                         = true
       enable_locks                                   = false
       rules = {
         https_in = {
@@ -122,13 +124,84 @@ locals {
   }
 
   keyvaults = {
-    "${local.sub_name_prefix}keyvault" = {
+    "${local.sub_name_prefix}keyvault1" = {
       kv_location                 = local.sub_default_loc
-      kv_resource_group_name      = azurerm_resource_group.rgp_keyvault.name
+      kv_resource_group_name      = "${local.sub_name_prefix}rgpkeyvaults"
       kv_tenant_id                = data.azuread_client_config.krogmoe.tenant_id
       kv_sku_name                 = "standard"
       kv_purge_protection_enabled = false
+      create                      = true
       enable_locks                = false
+    }
+    "${local.sub_name_prefix}keyvault2" = {
+      kv_location                 = local.sub_default_loc
+      kv_resource_group_name      = "${local.sub_name_prefix}rgpkeyvaults"
+      kv_tenant_id                = data.azuread_client_config.krogmoe.tenant_id
+      kv_sku_name                 = "standard"
+      kv_purge_protection_enabled = false
+      create                      = true
+      enable_locks                = false
+    }
+  }
+
+  storage_accounts = {
+    "${local.sub_name_prefix}straccount1" = {
+      resource_group_name               = "${local.sub_name_prefix}rgpstoraccts"
+      storage_location                  = local.sub_default_loc
+      storage_description               = "Storage Account 1"
+      storage_account_tier              = "Standard"
+      storage_account_replication       = "LRS"
+      storage_account_kind              = "BlobStorage"
+      storage_https_only                = true
+      storage_hns_enabled               = true
+      storage_nfsv3_enabled             = false
+      storage_min_tls_version           = "TLS1_2"
+      storage_shared_access_key_enabled = true
+      storage_allow_public_access       = true
+      storage_resource_tags             = local.default_tags
+      create                            = true
+      enable_locks                      = false
+    }
+    "${local.sub_name_prefix}straccount2" = {
+      resource_group_name               = "${local.sub_name_prefix}rgpstoraccts"
+      storage_location                  = local.sub_default_loc
+      storage_description               = "Storage Account 2"
+      storage_account_tier              = "Standard"
+      storage_account_replication       = "LRS"
+      storage_account_kind              = "BlobStorage"
+      storage_https_only                = true
+      storage_hns_enabled               = true
+      storage_nfsv3_enabled             = false
+      storage_min_tls_version           = "TLS1_2"
+      storage_shared_access_key_enabled = true
+      storage_allow_public_access       = true
+      storage_resource_tags             = local.default_tags
+      create                            = true
+      enable_locks                      = false
+    }
+  }
+
+  storage_account_containers = {
+    "${local.sub_name_prefix}cntaccount1" = {
+      storage_account_name  = "${local.sub_name_prefix}straccount1"
+      create = true
+    }
+    "${local.sub_name_prefix}cntaccount2" = {
+      storage_account_name  = "${local.sub_name_prefix}straccount2"
+      create = true
+    }
+  }
+
+  resource_groups = {
+    "${local.sub_name_prefix}rgpkeyvaults" = {
+      rgp_location = local.sub_default_loc
+      create       = true
+      enable_locks = false
+    }
+    "${local.sub_name_prefix}rgpstoraccts" = {
+      rgp_location = local.sub_default_loc
+      create       = true
+      enable_locks = false
     }
   }
 
@@ -161,103 +234,8 @@ data "azurerm_storage_account" "str_coreinfra" {
 }
 
 #**************************************
-# vNet(s)
+# Base IAC - Process Starts Here.....
 #**************************************
-resource "azurerm_virtual_network" "vnets" {
-  for_each            = local.vnets
-  name                = each.key
-  resource_group_name = data.azurerm_resource_group.rgp_iac.name
-  location            = each.value.vnet_cidr_location
-  address_space       = each.value.vnet_cidr
-
-  tags = local.default_tags
-}
-
-#**************************************
-# Subnet(s)
-#**************************************
-resource "azurerm_subnet" "subnets" {
-  for_each                                       = local.subnets
-  name                                           = each.key
-  resource_group_name                            = each.value.resource_group_name
-  virtual_network_name                           = each.value.vnet
-  address_prefixes                               = each.value.subnet
-  service_endpoints                              = each.value.service_endpoints
-  enforce_private_link_endpoint_network_policies = each.value.enforce_private_link_endpoint_network_policies
-
-  dynamic "delegation" {
-    for_each = each.value.delegations
-
-    content {
-      name = delegation.value.name
-
-      dynamic "service_delegation" {
-        for_each = delegation.value.services
-
-        content {
-          name    = service_delegation.value.name
-          actions = service_delegation.value.actions
-        }
-      }
-    }
-  }
-
-  lifecycle {
-    ignore_changes = [delegation]
-  }
-
-  depends_on = [azurerm_virtual_network.vnets]
-}
-
-resource "azurerm_management_lock" "subnets" {
-  for_each = {
-    for k, v in local.subnets : k => v if v.enable_locks
-  }
-  name       = each.key
-  scope      = azurerm_subnet.subnets[each.key].id
-  lock_level = "CanNotDelete"
-  notes      = "Locked to protect against deletion"
-}
-
-#**************************************
-# KeyVault Resource Group
-#**************************************
-resource "azurerm_resource_group" "rgp_keyvault" {
-  name     = "${local.sub_name_prefix}rgpkeyvaults"
-  location = local.sub_default_loc
-
-  tags = local.default_tags
-}
-
-resource "azurerm_management_lock" "rgp_keyvault" {
-  count      = local.enable_locks ? 1 : 0
-  name       = "${local.sub_name_prefix}rgpkeyvaults"
-  scope      = azurerm_resource_group.rgp_keyvault.id
-  lock_level = "CanNotDelete"
-  notes      = "Locked to protect against deletion"
-}
-
-#**************************************
-# KeyVault
-#**************************************
-resource "azurerm_key_vault" "key_certs" {
-  for_each                 = local.keyvaults
-  name                     = each.key
-  location                 = each.value.kv_location
-  resource_group_name      = each.value.kv_resource_group_name
-  tenant_id                = each.value.kv_tenant_id
-  sku_name                 = each.value.kv_sku_name
-  purge_protection_enabled = each.value.kv_purge_protection_enabled
-
-  tags = local.default_tags
-}
-
-resource "azurerm_management_lock" "key_certs" {
-  for_each = {
-    for k, v in local.keyvaults : k => v if v.enable_locks
-  }
-  name       = each.key
-  scope      = azurerm_key_vault.key_certs[each.key].id
-  lock_level = "CanNotDelete"
-  notes      = "Locked to protect against deletion"
+module "base" {
+  source = "../../../modules/base"
 }
